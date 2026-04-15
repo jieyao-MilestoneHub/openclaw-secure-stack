@@ -1,3 +1,8 @@
+networks:
+  openclaw-internal:
+    driver: bridge
+    internal: true
+
 services:
   gateway:
     build:
@@ -8,10 +13,35 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:18789"
+    env_file:
+      - /opt/openclaw-stack/bridge/.env
     volumes:
       - /opt/openclaw-stack/gateway/config:/home/node/.openclaw
       - /opt/openclaw-stack/gateway/data:/app/data
       - /opt/openclaw-stack/gateway/logs:/app/logs
+    networks:
+      - default
+      - openclaw-internal
+
+  bridge:
+    build:
+      context: /opt/openclaw-stack/bridge
+      dockerfile: Dockerfile
+    image: openclaw-bridge:local
+    container_name: openclaw-bridge
+    restart: unless-stopped
+    env_file:
+      - /opt/openclaw-stack/bridge/.env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/openclaw-stack/bridge/scripts/run-codex.sh:/scripts/run-codex.sh:ro
+      - /opt/openclaw-stack/deploy-runner/scripts/deploy-staging.sh:/scripts/deploy-staging.sh:ro
+      - /opt/openclaw-stack/db-query-runner/scripts/query-readonly.sh:/scripts/query-readonly.sh:ro
+    networks:
+      - openclaw-internal
+    read_only: true
+    tmpfs:
+      - /tmp
 
   codex-worker:
     build:
