@@ -17,6 +17,7 @@ gateway/config/identity/
 gateway/config/tasks/
 gateway/config/canvas/
 gateway/config/agents/
+gateway/config/devices/
 
 gateway/config/update-check.json
 deploy-runner/logs/
