@@ -1,0 +1,30 @@
+{
+  "gateway": {
+    "mode": "local",
+    "auth": {
+      "mode": "token",
+      "token": "<GATEWAY_AUTH_TOKEN>"
+    },
+    "controlUi": {
+      "allowedOrigins": [
+        "http://localhost:18789",
+        "http://127.0.0.1:18789"
+      ]
+    }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": false,
+      "botToken": "<TELEGRAM_BOT_TOKEN>",
+      "dmPolicy": "allowlist",
+      "allowFrom": [
+        "<YOUR_TELEGRAM_USER_ID>"
+      ],
+      "groupPolicy": "allowlist",
+      "groups": {}
+    }
+  },
+  "meta": {
+    "lastTouchedVersion": "2026.4.12"
+  }
+}
