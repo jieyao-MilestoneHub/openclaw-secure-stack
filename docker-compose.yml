@@ -1,0 +1,48 @@
+services:
+  gateway:
+    build:
+      context: /opt/openclaw-stack/gateway
+      dockerfile: Dockerfile
+    image: openclaw-gateway:local
+    container_name: openclaw-gateway
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:18789"
+    volumes:
+      - /opt/openclaw-stack/gateway/config:/home/node/.openclaw
+      - /opt/openclaw-stack/gateway/data:/app/data
+      - /opt/openclaw-stack/gateway/logs:/app/logs
+
+  codex-worker:
+    build:
+      context: /opt/openclaw-stack/codex-worker
+      dockerfile: Dockerfile
+    image: openclaw-codex-worker:local
+    container_name: openclaw-codex-worker
+    command: ["sh", "-c", "sleep infinity"]
+    restart: unless-stopped
+    env_file:
+      - /opt/openclaw-stack/codex-worker/.env
+    volumes:
+      - /opt/openclaw-stack/codex-worker/workspace:/workspace
+      - /opt/openclaw-stack/codex-worker/tmp:/tmp
+
+  deploy-runner:
+    image: alpine:3.20
+    container_name: openclaw-deploy-runner
+    command: ["sh", "-c", "sleep infinity"]
+    restart: unless-stopped
+    volumes:
+      - /opt/openclaw-stack/deploy-runner/scripts:/app/scripts
+      - /opt/openclaw-stack/deploy-runner/artifacts:/app/artifacts
+      - /opt/openclaw-stack/deploy-runner/logs:/app/logs
+
+  db-query-runner:
+    image: alpine:3.20
+    container_name: openclaw-db-query-runner
+    command: ["sh", "-c", "sleep infinity"]
+    restart: unless-stopped
+    volumes:
+      - /opt/openclaw-stack/db-query-runner/scripts:/app/scripts
+      - /opt/openclaw-stack/db-query-runner/results:/app/results
+      - /opt/openclaw-stack/db-query-runner/logs:/app/logs
