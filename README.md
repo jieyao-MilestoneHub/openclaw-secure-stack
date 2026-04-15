@@ -110,6 +110,7 @@ This stack went through a 9-step security convergence. The full record is in [`H
 | 7 | Telegram requires allowlist config | ✅ dmPolicy/groupPolicy allowlist |
 | 8 | All leaked credentials rotated | ✅ Done |
 | 9 | OpenClaw → Bridge integration | ✅ Narrow HTTP bridge on internal network |
+| 10 | Treat the gateway LLM as adversarial | ✅ exec allowlist (3 scripts) + `gateway.tools.allow=[exec]` + no LLM key yet |
 
 ---
 

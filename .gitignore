@@ -5,6 +5,8 @@
 !.env.*.example
 gateway/config/openclaw.json
 gateway/config/openclaw.json.bak*
+gateway/config/exec-approvals.json
+gateway/config/exec-approvals.sock
 
 # Runtime state (per-container mounts)
 gateway/logs/

@@ -79,6 +79,63 @@ OpenClaw's own threat model assumes one trusted operator per gateway. It is *not
   - `/opt/openclaw-stack/db-query-runner/scripts/query-readonly.sh`
 - Verification: `healthz` returns 200; missing token returns 401; a valid `SELECT` round-trips; `UPDATE` is rejected; the zero-arg deploy runs; an empty prompt is rejected; the bridge publishes no host port.
 
+### [x] 10. Treat the gateway LLM as adversarial
+
+- **Status: complete (2026-04-15)**
+
+This is the control that protects everything else. Items 1–9 build narrow,
+hardened back-ends. Item 10 makes sure the *front-end* — the agent driven by
+an LLM inside the gateway — can only reach those back-ends through the
+three approved scripts, and cannot freely execute shell on its host.
+
+OpenClaw ships with `tools.exec` in YOLO mode by default
+(`security=full`, `ask=off`, `askFallback=full`). In that posture, a
+prompt-injected or malicious user message could get the LLM to run
+`cat /home/node/.openclaw/openclaw.json`, leaking the gateway auth token
+and Telegram bot token — or to `curl http://openclaw-bridge:8005/...`
+directly, bypassing the gateway-side wrapper scripts. The YOLO default
+is convenient for a personal dev machine but unacceptable for anything
+that receives messages from the outside world.
+
+Controls applied:
+
+- **`tools.exec.security = allowlist`**, `ask = on-miss`, host
+  `askFallback = deny`. Requested policy and host approvals must both
+  agree for a command to run. Anything that doesn't match an explicit
+  allowlist entry falls through to deny because no approval UI is
+  wired up in a non-interactive deployment.
+- **Per-agent allowlist contains exactly three absolute paths**:
+  - `/home/node/.openclaw/run-codex.sh`
+  - `/home/node/.openclaw/deploy-staging.sh`
+  - `/home/node/.openclaw/query-readonly.sh`
+  Any other binary, any other path, any `ls` / `cat` / `curl` /
+  `node -e` is refused before the subprocess starts.
+- **`gateway.tools.allow = ["exec"]`**. The gateway-level coarse
+  allow-list exposes ONLY the exec tool to the agent runtime. Web
+  fetch, browser automation, filesystem tools, subagents, image /
+  video generation — everything else is off, reducing the blast
+  radius of a compromised or prompt-injected turn to "what can be
+  done through the three exec allowlist entries."
+- **Gateway has no LLM API key yet**. Even if every policy above
+  failed open, the agent cannot complete an inference turn because
+  no provider credentials are injected into the gateway container.
+  Adding a key later is a deliberate, reviewable step — and that
+  step should use a dedicated key with a spending cap, not the
+  same `CODEX_API_KEY` already bound to the codex-worker.
+
+The net result: a Telegram-origin message can only produce one of
+exactly three deterministic outcomes (run codex exec, staging
+deploy, read-only query), no matter what the LLM decides to do.
+
+Verification:
+
+- `openclaw approvals get --gateway` shows `security=allowlist`,
+  `askFallback=deny`, 3 allowlist entries.
+- `openclaw exec-policy show` reports the effective policy as
+  `security=allowlist, ask=on-miss`.
+- `env | grep -i api` inside `openclaw-gateway` shows only
+  `BRIDGE_TOKEN` — no OPENAI / ANTHROPIC / any model key.
+
 ---
 
 ## File reference
@@ -98,3 +155,4 @@ OpenClaw's own threat model assumes one trusted operator per gateway. It is *not
 | `/opt/openclaw-stack/deploy-runner/scripts/deploy-staging.sh` | Deploy worker script |
 | `/opt/openclaw-stack/db-query-runner/scripts/query-readonly.sh` | DB query worker script |
 | `/opt/openclaw-stack/codex-worker/.env` | `CODEX_API_KEY` (chmod 600, not committed) |
+| `/opt/openclaw-stack/gateway/config/exec-approvals.json` | Host-local exec allowlist (chmod 600, not committed) |
