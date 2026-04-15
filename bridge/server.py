@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TOKEN = os.environ.get("BRIDGE_TOKEN", "").strip()
@@ -20,6 +21,9 @@ if not TOKEN or len(TOKEN) < 32:
     sys.exit(1)
 
 MAX_BODY = 8192
+MAX_CONCURRENCY = int(os.environ.get("BRIDGE_MAX_CONCURRENCY", "4"))
+
+_slots = threading.BoundedSemaphore(MAX_CONCURRENCY)
 
 ROUTES = {
     "/run-codex":      {"script": "/scripts/run-codex.sh",      "field": "prompt", "timeout": 600},
@@ -51,6 +55,15 @@ class Handler(BaseHTTPRequestHandler):
             self._json(404, {"ok": False, "error": "unknown endpoint"})
             return
 
+        if not _slots.acquire(blocking=False):
+            self._json(503, {"ok": False, "error": "busy"})
+            return
+        try:
+            self._do_post_locked(route)
+        finally:
+            _slots.release()
+
+    def _do_post_locked(self, route):
         auth = self.headers.get("Authorization", "").encode("utf-8", "replace")
         expected = ("Bearer " + TOKEN).encode("utf-8")
         if not hmac.compare_digest(auth, expected):
