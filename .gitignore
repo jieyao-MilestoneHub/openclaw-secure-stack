@@ -1,0 +1,39 @@
+# Secrets & credentials
+*.env
+.env*
+!.env.example
+!.env.*.example
+gateway/config/openclaw.json
+gateway/config/openclaw.json.bak*
+
+# Runtime state (per-container mounts)
+gateway/logs/
+gateway/data/
+gateway/config/logs/
+gateway/config/workspace/
+gateway/config/identity/
+gateway/config/tasks/
+gateway/config/canvas/
+gateway/config/agents/
+
+gateway/config/update-check.json
+deploy-runner/logs/
+deploy-runner/artifacts/
+db-query-runner/logs/
+db-query-runner/results/
+codex-worker/tmp/
+
+# Nested project (separate repo; user clones finantial-chatbot into this path)
+codex-worker/workspace/
+
+# Build / cache
+__pycache__/
+*.pyc
+node_modules/
+.cache/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
