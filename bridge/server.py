@@ -7,6 +7,7 @@ Design constraints:
 - JSON body only; one optional string field per route; hard size cap.
 - Per-route subprocess timeout; output returned as JSON, never streamed to a shell.
 """
+import hmac
 import json
 import os
 import subprocess
@@ -50,9 +51,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json(404, {"ok": False, "error": "unknown endpoint"})
             return
 
-        auth = self.headers.get("Authorization", "")
-        expected = "Bearer " + TOKEN
-        if len(auth) != len(expected) or auth != expected:
+        auth = self.headers.get("Authorization", "").encode("utf-8", "replace")
+        expected = ("Bearer " + TOKEN).encode("utf-8")
+        if not hmac.compare_digest(auth, expected):
             self._json(401, {"ok": False, "error": "unauthorized"})
             return
 
