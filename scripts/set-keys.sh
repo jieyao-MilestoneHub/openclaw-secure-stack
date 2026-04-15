@@ -1,48 +1,61 @@
 #!/bin/sh
 #
-# scripts/set-keys.sh — write API keys into the right per-service .env files.
+# scripts/set-keys.sh — write API keys / tokens into the right places.
 #
 # Usage:
-#   scripts/set-keys.sh --codex <CODEX_API_KEY> --gateway <OPENAI_API_KEY>
+#   scripts/set-keys.sh --codex    <CODEX_API_KEY>          # codex-worker/.env
+#   scripts/set-keys.sh --gateway  <OPENAI_API_KEY>         # gateway/.env
+#   scripts/set-keys.sh --telegram                          # reads from stdin
+#   scripts/set-keys.sh --telegram -                        # reads from stdin
 #
-# Either flag is optional; missing ones are left untouched. Short forms
-# -c / -g also work. Example:
-#   scripts/set-keys.sh -c sk-proj-abc... -g sk-proj-xyz...
+# You may combine flags: -c KEY1 -g KEY2 -t will update all three.
+# Missing flags are left untouched.
 #
-# Alternatively, pass keys via env vars to keep them out of argv (safer
-# because they don't appear in `ps` or shell history):
-#   CODEX_API_KEY=sk-... OPENAI_API_KEY=sk-... scripts/set-keys.sh
+# Env-var form (safer, keeps the value out of argv / `ps` / shell history):
+#   CODEX_API_KEY=sk-...  OPENAI_API_KEY=sk-...  TELEGRAM_BOT_TOKEN=123:abc \
+#     scripts/set-keys.sh
 #
 # SECURITY NOTES
-# - Arguments passed to this script appear in `ps -ef`, in your shell
-#   history file, and potentially in audit logs. Prefer the env-var form
-#   above, or use `read -rs` in your own wrapper. This script is a
-#   convenience tool, not a secrets vault.
-# - Files are written with mode 600 (owner read/write only) and placed
-#   under paths already covered by .gitignore (*.env, .env*).
-# - The codex-worker container is restarted automatically so the new
+# - Arguments passed as flags appear in `ps -ef`, in your shell history,
+#   and possibly in audit logs. For production rotation, prefer the
+#   env-var form above, or run with `--telegram` (or `-t`) with no value
+#   so the token is read from stdin (hidden input is your caller's
+#   responsibility, e.g. `read -rs VAR && TELEGRAM_BOT_TOKEN=$VAR ...`).
+# - This script never echoes the actual value. Its output is limited to
+#   byte counts, file modes, and gitignore status.
+# - Files are written with mode 600.
+# - The codex-worker container is restarted automatically so a new
 #   CODEX_API_KEY takes effect. The gateway container is NOT restarted
-#   here, because enabling the gateway LLM is a separately-reviewed step.
+#   even when --telegram is used, because enabling Telegram is a
+#   separately-reviewed step (see HARDENING.md).
 #
 set -eu
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CODEX_ENV="$REPO_ROOT/codex-worker/.env"
 GATEWAY_ENV="$REPO_ROOT/gateway/.env"
+OPENCLAW_JSON_IN_CONTAINER="/home/node/.openclaw/openclaw.json"
+GATEWAY_CONTAINER="openclaw-gateway"
 
 codex_key="${CODEX_API_KEY:-}"
 gateway_key="${OPENAI_API_KEY:-}"
+telegram_token="${TELEGRAM_BOT_TOKEN:-}"
+read_telegram_from_stdin=no
 
 usage() {
     cat <<USAGE
-Usage: $0 [--codex|-c <CODEX_API_KEY>] [--gateway|-g <OPENAI_API_KEY>]
-       or set CODEX_API_KEY / OPENAI_API_KEY in the environment.
+Usage: $0 [--codex|-c <KEY>] [--gateway|-g <KEY>] [--telegram|-t [-]]
 
-Writes:
-  $CODEX_ENV       (if --codex or \$CODEX_API_KEY is provided)
-  $GATEWAY_ENV     (if --gateway or \$OPENAI_API_KEY is provided)
+  --codex    / -c VALUE    write CODEX_API_KEY to codex-worker/.env
+  --gateway  / -g VALUE    write OPENAI_API_KEY to gateway/.env
+  --telegram / -t [ - ]    write channels.telegram.botToken into the
+                           gateway's openclaw.json; reads from stdin
+                           (or \$TELEGRAM_BOT_TOKEN if set).
 
-Files are created with mode 600.
+Env-var form:
+  CODEX_API_KEY / OPENAI_API_KEY / TELEGRAM_BOT_TOKEN
+
+All three are optional; at least one must be supplied.
 USAGE
 }
 
@@ -60,6 +73,18 @@ while [ $# -gt 0 ]; do
             gateway_key="$1"
             shift
             ;;
+        -t|--telegram)
+            # If the next arg is '-' or missing, read from stdin.
+            # Otherwise accept it as the value (discouraged; visible in ps).
+            if [ $# -ge 2 ] && [ "$2" != "-" ] && ! printf '%s' "$2" | grep -q '^-'; then
+                telegram_token="$2"
+                shift 2
+            else
+                read_telegram_from_stdin=yes
+                [ $# -ge 2 ] && [ "$2" = "-" ] && shift
+                shift
+            fi
+            ;;
         -h|--help)
             usage
             exit 0
@@ -72,8 +97,16 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-if [ -z "$codex_key" ] && [ -z "$gateway_key" ]; then
-    echo "ERROR: nothing to do. Provide --codex and/or --gateway (or set env vars)." >&2
+if [ "$read_telegram_from_stdin" = "yes" ] && [ -z "$telegram_token" ]; then
+    # Read one line from stdin, then strip trailing whitespace.
+    if [ -t 0 ]; then
+        printf 'Paste Telegram botToken and press Enter (input is visible): ' >&2
+    fi
+    IFS= read -r telegram_token || telegram_token=""
+fi
+
+if [ -z "$codex_key" ] && [ -z "$gateway_key" ] && [ -z "$telegram_token" ]; then
+    echo "ERROR: nothing to do. Provide --codex and/or --gateway and/or --telegram." >&2
     usage >&2
     exit 2
 fi
@@ -101,7 +134,7 @@ verify_gitignored() {
 
 # Basic sanity check: OpenAI-style keys start with "sk-". We don't enforce
 # it because providers change formats, but we warn so typos surface early.
-warn_format() {
+warn_openai_format() {
     name="$1"; value="$2"
     case "$value" in
         sk-*) ;;
@@ -112,31 +145,72 @@ warn_format() {
     fi
 }
 
+# Telegram tokens look like "<9-10 digit bot id>:<~35 char body>".
+warn_telegram_format() {
+    value="$1"
+    case "$value" in
+        [0-9]*:*) ;;
+        *) echo "WARNING: Telegram botToken does not match <id>:<body> shape" >&2 ;;
+    esac
+    if [ "${#value}" -lt 30 ] || [ "${#value}" -gt 80 ]; then
+        echo "WARNING: Telegram botToken length ${#value} is outside 30..80 — double-check" >&2
+    fi
+}
+
+# Write botToken into openclaw.json inside the gateway container. The value
+# is piped over stdin to the in-container Python process so it never appears
+# in argv / docker exec command line / ps listing.
+set_telegram_token() {
+    value="$1"
+    if ! docker ps --format '{{.Names}}' | grep -q "^${GATEWAY_CONTAINER}\$"; then
+        echo "ERROR: container ${GATEWAY_CONTAINER} is not running" >&2
+        exit 1
+    fi
+    printf '%s' "$value" | docker exec -i "$GATEWAY_CONTAINER" python3 -c '
+import json, os, sys, tempfile
+path = "'"$OPENCLAW_JSON_IN_CONTAINER"'"
+token = sys.stdin.read()
+with open(path, "r") as f:
+    cfg = json.load(f)
+cfg.setdefault("channels", {}).setdefault("telegram", {})["botToken"] = token
+fd, tmp = tempfile.mkstemp(prefix=".openclaw.json.", dir=os.path.dirname(path))
+try:
+    with os.fdopen(fd, "w") as f:
+        json.dump(cfg, f, indent=2)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+finally:
+    if os.path.exists(tmp):
+        os.remove(tmp)
+' \
+        && echo "wrote ${GATEWAY_CONTAINER}:${OPENCLAW_JSON_IN_CONTAINER} (botToken field; value not echoed)"
+}
+
 if [ -n "$codex_key" ]; then
-    warn_format CODEX_API_KEY "$codex_key"
+    warn_openai_format CODEX_API_KEY "$codex_key"
     write_env "$CODEX_ENV" CODEX_API_KEY "$codex_key"
     verify_gitignored "$CODEX_ENV" || true
     restart_codex=yes
 fi
 
 if [ -n "$gateway_key" ]; then
-    warn_format OPENAI_API_KEY "$gateway_key"
+    warn_openai_format OPENAI_API_KEY "$gateway_key"
     write_env "$GATEWAY_ENV" OPENAI_API_KEY "$gateway_key"
     verify_gitignored "$GATEWAY_ENV" || true
 fi
 
+if [ -n "$telegram_token" ]; then
+    warn_telegram_format "$telegram_token"
+    set_telegram_token "$telegram_token"
+fi
+
 # Wipe local copies from this process's memory ASAP.
-codex_key=""; gateway_key=""
-unset codex_key gateway_key
+codex_key=""; gateway_key=""; telegram_token=""
+unset codex_key gateway_key telegram_token TELEGRAM_BOT_TOKEN
 
 # Rebuild the project-root .env that `docker compose` reads for variable
 # interpolation. Canonical per-service .env files stay authoritative; this
 # file is derived from them. Never edit it by hand.
-#
-# Only BRIDGE_TOKEN (from bridge/.env) and OPENAI_API_KEY (from
-# gateway/.env) need to be interpolated into compose — CODEX_API_KEY is
-# passed into codex-worker via env_file: directly, so it stays out of
-# the compose-level namespace.
 rebuild_root_env() {
     root_env="$REPO_ROOT/.env"
     if [ -L "$root_env" ]; then
