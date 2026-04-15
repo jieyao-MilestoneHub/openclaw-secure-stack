@@ -34,8 +34,7 @@ set -eu
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CODEX_ENV="$REPO_ROOT/codex-worker/.env"
 GATEWAY_ENV="$REPO_ROOT/gateway/.env"
-OPENCLAW_JSON_IN_CONTAINER="/home/node/.openclaw/openclaw.json"
-GATEWAY_CONTAINER="openclaw-gateway"
+OPENCLAW_JSON="$REPO_ROOT/gateway/config/openclaw.json"
 
 codex_key="${CODEX_API_KEY:-}"
 gateway_key="${OPENAI_API_KEY:-}"
@@ -157,18 +156,23 @@ warn_telegram_format() {
     fi
 }
 
-# Write botToken into openclaw.json inside the gateway container. The value
-# is piped over stdin to the in-container Python process so it never appears
-# in argv / docker exec command line / ps listing.
+# Write botToken into openclaw.json by editing the host file directly.
+# The file is a bind mount into the gateway container, so the container
+# sees the same update. The value is piped over stdin to a host python3
+# process so it never appears in argv / shell history / ps listing.
 set_telegram_token() {
     value="$1"
-    if ! docker ps --format '{{.Names}}' | grep -q "^${GATEWAY_CONTAINER}\$"; then
-        echo "ERROR: container ${GATEWAY_CONTAINER} is not running" >&2
+    if [ ! -f "$OPENCLAW_JSON" ]; then
+        echo "ERROR: $OPENCLAW_JSON does not exist (did you run 'cp openclaw.json.example openclaw.json'?)" >&2
         exit 1
     fi
-    printf '%s' "$value" | docker exec -i "$GATEWAY_CONTAINER" python3 -c '
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "ERROR: python3 is required on the host but was not found in PATH" >&2
+        exit 1
+    fi
+    printf '%s' "$value" | OPENCLAW_JSON="$OPENCLAW_JSON" python3 -c '
 import json, os, sys, tempfile
-path = "'"$OPENCLAW_JSON_IN_CONTAINER"'"
+path = os.environ["OPENCLAW_JSON"]
 token = sys.stdin.read()
 with open(path, "r") as f:
     cfg = json.load(f)
@@ -183,7 +187,8 @@ finally:
     if os.path.exists(tmp):
         os.remove(tmp)
 ' \
-        && echo "wrote ${GATEWAY_CONTAINER}:${OPENCLAW_JSON_IN_CONTAINER} (botToken field; value not echoed)"
+        && chmod 600 "$OPENCLAW_JSON" \
+        && echo "wrote $OPENCLAW_JSON (botToken field; value not echoed)"
 }
 
 if [ -n "$codex_key" ]; then

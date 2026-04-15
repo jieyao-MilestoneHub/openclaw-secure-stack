@@ -30,6 +30,17 @@ services:
     networks:
       - default
       - openclaw-internal
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: 1.0
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   bridge:
     build:
@@ -44,6 +55,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /opt/openclaw-stack/bridge/scripts/run-codex.sh:/scripts/run-codex.sh:ro
+      - /opt/openclaw-stack/bridge/scripts/codex-preamble.txt:/scripts/codex-preamble.txt:ro
       - /opt/openclaw-stack/deploy-runner/scripts/deploy-staging.sh:/scripts/deploy-staging.sh:ro
       - /opt/openclaw-stack/db-query-runner/scripts/query-readonly.sh:/scripts/query-readonly.sh:ro
     networks:
@@ -55,6 +67,15 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   codex-worker:
     build:
@@ -69,6 +90,19 @@ services:
     volumes:
       - /opt/openclaw-stack/codex-worker/workspace:/workspace
       - /opt/openclaw-stack/codex-worker/tmp:/tmp
+    mem_limit: 2g
+    memswap_limit: 2g
+    cpus: 2.0
+    pids_limit: 512
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   deploy-runner:
     image: alpine:3.20
@@ -79,6 +113,19 @@ services:
       - /opt/openclaw-stack/deploy-runner/scripts:/app/scripts
       - /opt/openclaw-stack/deploy-runner/artifacts:/app/artifacts
       - /opt/openclaw-stack/deploy-runner/logs:/app/logs
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   db-query-runner:
     image: alpine:3.20
@@ -89,3 +136,16 @@ services:
       - /opt/openclaw-stack/db-query-runner/scripts:/app/scripts
       - /opt/openclaw-stack/db-query-runner/results:/app/results
       - /opt/openclaw-stack/db-query-runner/logs:/app/logs
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
