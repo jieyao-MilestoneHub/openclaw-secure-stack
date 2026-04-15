@@ -90,6 +90,7 @@ services:
     volumes:
       - /opt/openclaw-stack/codex-worker/workspace:/workspace
       - /opt/openclaw-stack/codex-worker/tmp:/tmp
+      - /opt/openclaw-stack/codex-worker/config/config.toml:/home/node/.codex/config.toml:ro
     mem_limit: 2g
     memswap_limit: 2g
     cpus: 2.0

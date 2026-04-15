@@ -1,0 +1,47 @@
+# Codex CLI config — token-frugal defaults for the openclaw bridge.
+# Mounted read-only at /home/node/.codex/config.toml inside openclaw-codex-worker.
+# Every knob here was picked to cut tokens without changing what codex CAN do;
+# model name is intentionally left unset so the CLI default is used until the
+# operator opts into the cheaper profile below via `-p cheap`.
+
+# --- Reasoning ---
+# Default `medium` reasoning is overkill for the small, well-scoped tasks this
+# bridge gets. `low` keeps tool-use intelligence; `xhigh` would burn 3-5x.
+model_reasoning_effort = "low"
+
+# Don't pay output tokens for the human-readable reasoning summary — the
+# telegram channel only needs the final answer.
+model_reasoning_summary = "none"
+hide_agent_reasoning = true
+
+# --- Verbosity ---
+# GPT-5 family obeys this; shorter assistant prose, same code quality.
+model_verbosity = "low"
+
+# --- History ---
+# `codex exec` here is invoked one-shot per Telegram message and never resumed,
+# so persisting a session transcript only wastes disk and (on resume) tokens.
+[history]
+persistence = "none"
+max_bytes = 1048576  # 1 MiB hard cap if persistence ever flips back on
+
+# --- Tool output / project-doc caps (defense against context blow-up) ---
+# A misbehaving `rg` or `cat` can dump megabytes into context and silently
+# 10x the bill. Cap each tool turn and the AGENTS.md injection.
+tool_output_token_limit = 2000
+project_doc_max_bytes = 4096
+
+# --- Auto-compaction ---
+# Trigger compaction earlier than the model's full window so we don't pay
+# input tokens on a near-full transcript before it gets summarised.
+model_auto_compact_token_limit = 32000
+
+# --- Opt-in cheap profile ---
+# Switch on per-call with `codex exec -p cheap ...`. Update the model string
+# once you've confirmed the exact name your account exposes (e.g.
+# "gpt-5.4-mini" or "gpt-5.1-codex-mini") — leaving it commented avoids a
+# silent failure if the name is wrong.
+[profiles.cheap]
+# model = "gpt-5.4-mini"
+model_reasoning_effort = "minimal"
+model_verbosity = "low"

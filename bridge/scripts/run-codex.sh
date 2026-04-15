@@ -35,5 +35,5 @@ ${PROMPT}"
 printf '%s' "$FULL_PROMPT" | docker exec -i openclaw-codex-worker sh -lc '
   cd /workspace/finantial-chatbot &&
   PROMPT="$(cat)" &&
-  codex exec "$PROMPT"
+  codex exec --ephemeral --skip-git-repo-check "$PROMPT"
 '
