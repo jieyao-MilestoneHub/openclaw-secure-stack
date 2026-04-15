@@ -13,8 +13,12 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:18789"
-    env_file:
-      - /opt/openclaw-stack/bridge/.env
+    environment:
+      # Explicit allow-list: ONLY the bridge token is ever forwarded
+      # into the gateway container. env_file would inject every line
+      # of bridge/.env as an env var, which is a footgun if that file
+      # ever grows. See HARDENING.md note (L4).
+      BRIDGE_TOKEN: ${BRIDGE_TOKEN}
     volumes:
       - /opt/openclaw-stack/gateway/config:/home/node/.openclaw
       - /opt/openclaw-stack/gateway/data:/app/data
@@ -30,8 +34,9 @@ services:
     image: openclaw-bridge:local
     container_name: openclaw-bridge
     restart: unless-stopped
-    env_file:
-      - /opt/openclaw-stack/bridge/.env
+    environment:
+      # Explicit allow-list; see gateway.environment for rationale.
+      BRIDGE_TOKEN: ${BRIDGE_TOKEN}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /opt/openclaw-stack/bridge/scripts/run-codex.sh:/scripts/run-codex.sh:ro
